@@ -1,0 +1,306 @@
+// Zustand 状态管理
+
+import { create } from 'zustand';
+import { Piece, PieceColor as PieceColorType, Position, getInitialPieces, placePieces, copyPieces, movePiece } from '../engine/board';
+export type PieceColor = PieceColorType;
+import { isInCheck, isCheckmate, isStalemate, getLegalMoves } from '../engine/rules';
+import { getBestMove, MoveNode } from '../engine/moves';
+import { AIRequest, AIResponse } from '../engine/ai.worker';
+
+export type GameStatus = 'playing' | 'red_wins' | 'black_wins' | 'draw';
+export type Difficulty = 'easy' | 'medium' | 'hard';
+
+interface ChessState {
+  pieces: Piece[];
+  selectedPiece: Piece | null;
+  legalMoves: Position[];
+  currentTurn: PieceColor;
+  moveHistory: { from: Position; to: Position; piece: Piece; captured?: Piece }[];
+  gameStatus: GameStatus;
+  isAIThinking: boolean;
+  playerColor: PieceColor; // 玩家执什么颜色
+  difficulty: Difficulty;
+  lastMove: { from: Position; to: Position } | null;
+  isInCheck: boolean;
+  thinkingTime: number;
+  
+  // Actions
+  selectPiece: (piece: Piece) => void;
+  movePiece: (to: Position) => void;
+  deselectPiece: () => void;
+  undoMove: () => void;
+  resetGame: () => void;
+  setDifficulty: (difficulty: Difficulty) => void;
+  setPlayerColor: (color: PieceColor) => void;
+  makeAIMove: () => void;
+}
+
+const getDepth = (difficulty: Difficulty): number => {
+  switch (difficulty) {
+    case 'easy': return 2;
+    case 'medium': return 3;
+    case 'hard': return 4;
+    default: return 3;
+  }
+};
+
+// 音效函数
+const playSound = (type: 'move' | 'capture' | 'check') => {
+  try {
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    
+    switch (type) {
+      case 'move':
+        oscillator.frequency.value = 800;
+        gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.1);
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.1);
+        break;
+      case 'capture':
+        oscillator.frequency.value = 400;
+        gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.2);
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.2);
+        break;
+      case 'check':
+        oscillator.frequency.value = 1200;
+        gainNode.gain.setValueAtTime(0.15, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.3);
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.3);
+        break;
+    }
+  } catch (e) {
+    // 音频不可用，静默处理
+  }
+};
+
+export const useChessStore = create<ChessState>((set, get) => ({
+  pieces: getInitialPieces(),
+  selectedPiece: null,
+  legalMoves: [],
+  currentTurn: 'red',
+  moveHistory: [],
+  gameStatus: 'playing',
+  isAIThinking: false,
+  playerColor: 'red',
+  difficulty: 'medium',
+  lastMove: null,
+  isInCheck: false,
+  thinkingTime: 0,
+  
+  selectPiece: (piece: Piece) => {
+    const state = get();
+    if (state.gameStatus !== 'playing' || state.isAIThinking) return;
+    if (piece.color !== state.currentTurn) return;
+    if (piece.color !== state.playerColor && state.isAIThinking) return;
+    
+    const board = placePieces(state.pieces);
+    const moves = getLegalMoves(board, piece);
+    
+    set({ 
+      selectedPiece: piece, 
+      legalMoves: moves 
+    });
+  },
+  
+  deselectPiece: () => {
+    set({ selectedPiece: null, legalMoves: [] });
+  },
+  
+  movePiece: (to: Position) => {
+    const state = get();
+    const { selectedPiece, pieces, currentTurn, moveHistory } = state;
+    
+    if (!selectedPiece || state.gameStatus !== 'playing' || state.isAIThinking) return;
+    
+    // 验证是否是合法移动
+    const board = placePieces(pieces);
+    const allLegalMoves = getLegalMoves(board, selectedPiece);
+    const isLegal = allLegalMoves.some(m => m.x === to.x && m.y === to.y);
+    
+    if (!isLegal) return;
+    
+    // 获取被吃的棋子
+    const capturedPiece = pieces.find(p => p.x === to.x && p.y === to.y);
+    
+    // 执行移动
+    const newPieces = movePiece(pieces, { x: selectedPiece.x, y: selectedPiece.y }, to);
+    const newBoard = placePieces(newPieces);
+    
+    // 切换回合
+    const nextTurn = currentTurn === 'red' ? 'black' : 'red';
+    
+    // 检查游戏状态
+    let gameStatus: GameStatus = state.gameStatus;
+    let inCheckState = false;
+    
+    if (isCheckmate(newBoard, newPieces, nextTurn)) {
+      gameStatus = currentTurn === 'red' ? 'red_wins' : 'black_wins';
+    } else if (isStalemate(newBoard, newPieces, nextTurn)) {
+      gameStatus = 'draw';
+    } else if (isInCheck(newBoard, nextTurn)) {
+      inCheckState = true;
+    }
+    
+    // 播放音效
+    if (capturedPiece) {
+      playSound('capture');
+    } else {
+      playSound('move');
+    }
+    
+    if (inCheckState) {
+      setTimeout(() => playSound('check'), 100);
+    }
+    
+    set({
+      pieces: newPieces,
+      selectedPiece: null,
+      legalMoves: [],
+      currentTurn: nextTurn,
+      moveHistory: [...moveHistory, { 
+        from: { x: selectedPiece.x, y: selectedPiece.y }, 
+        to, 
+        piece: { ...selectedPiece },
+        captured: capturedPiece 
+      }],
+      lastMove: { from: { x: selectedPiece.x, y: selectedPiece.y }, to },
+      gameStatus,
+      isInCheck: inCheckState,
+    });
+    
+    // 如果是玩家走棋且游戏未结束，触发AI
+    if (gameStatus === 'playing' && nextTurn !== state.playerColor) {
+      setTimeout(() => get().makeAIMove(), 500);
+    }
+  },
+  
+  undoMove: () => {
+    const state = get();
+    if (state.moveHistory.length === 0 || state.isAIThinking) return;
+    
+    // 移除最后一步
+    const newHistory = [...state.moveHistory];
+    const lastMove = newHistory.pop()!;
+    
+    // 恢复棋子位置
+    let newPieces = copyPieces(state.pieces);
+    const movedPieceIndex = newPieces.findIndex(
+      p => p.x === lastMove.to.x && p.y === lastMove.to.y
+    );
+    
+    if (movedPieceIndex !== -1) {
+      newPieces[movedPieceIndex] = { 
+        ...newPieces[movedPieceIndex], 
+        x: lastMove.from.x, 
+        y: lastMove.from.y 
+      };
+    }
+    
+    // 如果有被吃的棋子，恢复它
+    if (lastMove.captured) {
+      newPieces.push(lastMove.captured);
+    }
+    
+    // 切换回上一回合
+    const nextTurn = state.currentTurn === 'red' ? 'black' : 'red';
+    const board = placePieces(newPieces);
+    const isInCheckState = isInCheck(board, nextTurn);
+    
+    set({
+      pieces: newPieces,
+      selectedPiece: null,
+      legalMoves: [],
+      currentTurn: nextTurn,
+      moveHistory: newHistory,
+      lastMove: newHistory.length > 0 
+        ? { from: newHistory[newHistory.length - 1].from, to: newHistory[newHistory.length - 1].to }
+        : null,
+      gameStatus: 'playing',
+      isInCheck: isInCheckState,
+    });
+  },
+  
+  resetGame: () => {
+    set({
+      pieces: getInitialPieces(),
+      selectedPiece: null,
+      legalMoves: [],
+      currentTurn: 'red',
+      moveHistory: [],
+      gameStatus: 'playing',
+      isAIThinking: false,
+      lastMove: null,
+      isInCheck: false,
+      thinkingTime: 0,
+    });
+  },
+  
+  setDifficulty: (difficulty: Difficulty) => {
+    set({ difficulty });
+  },
+  
+  setPlayerColor: (playerColor: PieceColor) => {
+    set({ playerColor });
+    // 如果玩家执黑，AI先走
+    if (playerColor === 'black') {
+      setTimeout(() => get().makeAIMove(), 500);
+    }
+  },
+  
+  makeAIMove: () => {
+    const state = get();
+    if (state.gameStatus !== 'playing' || state.isAIThinking) return;
+    
+    set({ isAIThinking: true });
+    
+    const piecesCopy = copyPieces(state.pieces);
+    const depth = getDepth(state.difficulty);
+    const aiColor = state.playerColor === 'red' ? 'black' : 'red';
+    
+    // 使用 setTimeout 避免阻塞 UI
+    setTimeout(() => {
+      const board = placePieces(piecesCopy);
+      const move = getBestMove(board, piecesCopy, aiColor, depth);
+      
+      if (move) {
+        // 直接设置 selectedPiece 和 legalMoves，绕过 selectPiece 的 isAIThinking 检查
+        const moveBoard = placePieces(get().pieces);
+        const legalMoves = getLegalMoves(moveBoard, move.piece);
+        set({ 
+          selectedPiece: move.piece, 
+          legalMoves 
+        });
+        setTimeout(() => {
+          get().movePiece(move.to);
+          set({ isAIThinking: false });
+        }, 200);
+      } else {
+        // AI无子可动
+        const newBoard = placePieces(piecesCopy);
+        if (isStalemate(newBoard, piecesCopy, aiColor)) {
+          set({ 
+            gameStatus: aiColor === 'red' ? 'black_wins' : 'red_wins',
+            isAIThinking: false 
+          });
+        } else if (isCheckmate(newBoard, piecesCopy, aiColor)) {
+          set({ 
+            gameStatus: aiColor === 'red' ? 'black_wins' : 'red_wins',
+            isAIThinking: false 
+          });
+        } else {
+          set({ isAIThinking: false });
+        }
+      }
+    }, 100);
+  },
+}));
