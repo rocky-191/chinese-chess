@@ -263,27 +263,42 @@ export const useChessStore = create<ChessState>((set, get) => ({
     
     set({ isAIThinking: true });
     
-    const piecesCopy = copyPieces(state.pieces);
     const depth = getDepth(state.difficulty);
     const aiColor = state.playerColor === 'red' ? 'black' : 'red';
     
     // 使用 setTimeout 避免阻塞 UI
     setTimeout(() => {
+      // 重新获取当前状态，确保使用最新的棋盘
+      const currentState = get();
+      const piecesCopy = copyPieces(currentState.pieces);
       const board = placePieces(piecesCopy);
       const move = getBestMove(board, piecesCopy, aiColor, depth);
       
       if (move) {
-        // 直接设置 selectedPiece 和 legalMoves，绕过 selectPiece 的 isAIThinking 检查
-        const moveBoard = placePieces(get().pieces);
-        const legalMoves = getLegalMoves(moveBoard, move.piece);
-        set({ 
-          selectedPiece: move.piece, 
-          legalMoves 
-        });
-        setTimeout(() => {
-          get().movePiece(move.to);
+        // 在当前棋盘上找到对应的棋子（因为move.piece来自piecesCopy）
+        // 再次重新获取当前状态，确保使用最新的棋盘
+        const latestState = get();
+        const currentPiece = latestState.pieces.find(p => 
+          p.x === move.from.x && 
+          p.y === move.from.y && 
+          p.type === move.piece.type && 
+          p.color === move.piece.color
+        );
+        
+        if (currentPiece) {
+          const moveBoard = placePieces(latestState.pieces);
+          const legalMoves = getLegalMoves(moveBoard, currentPiece);
+          set({ 
+            selectedPiece: currentPiece, 
+            legalMoves 
+          });
+          setTimeout(() => {
+            get().movePiece(move.to);
+            set({ isAIThinking: false });
+          }, 200);
+        } else {
           set({ isAIThinking: false });
-        }, 200);
+        }
       } else {
         // AI无子可动
         const newBoard = placePieces(piecesCopy);

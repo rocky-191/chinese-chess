@@ -144,8 +144,8 @@ export function canPawnMove(board: (Piece | null)[][], from: Position, to: Posit
   if (color === 'red') {
     // 红兵只能向上（y增大），不能后退
     if (to.y < from.y) return false;
-    // 红兵过河前（y<5）只能前进，过河后（y>=5）可横向
-    if (from.y < 5) {
+    // 红兵过河前（y<=4）只能前进，过河后（y>=5）可横向
+    if (from.y <= 4) {
       // 没过河，只能前进1格
       if (to.y === from.y + 1 && to.x === from.x) return true;
       return false;
@@ -158,8 +158,8 @@ export function canPawnMove(board: (Piece | null)[][], from: Position, to: Posit
   } else {
     // 黑卒只能向下（y减小），不能后退
     if (to.y > from.y) return false;
-    // 黑卒过河前（y>4）只能前进，过河后（y<=4）可横向
-    if (from.y > 4) {
+    // 黑卒过河前（y>=5）只能前进，过河后（y<=4）可横向
+    if (from.y >= 5) {
       // 没过河，只能前进1格
       if (to.y === from.y - 1 && to.x === from.x) return true;
       return false;
@@ -285,29 +285,29 @@ export function getPossibleMoves(type: PieceType, color: PieceColor, x: number, 
       break;
       
     case 'p': // 兵/卒
-      // 楚河汉界：y=4.5是分界线，红方在y>4.5（下方），黑方在y<5（上方）
-      // 红兵过河前（y>4）只能前进，过河后（y<=4）可横向
-      // 黑卒过河前（y<5）只能前进，过河后（y>=5）可横向
+      // 楚河汉界：y=4和y=5之间是河界
+      // 红兵起始y=3，向上前进（y增大），过河后进入y>=5
+      // 黑卒起始y=6，向下前进（y减小），过河后进入y<=4
       
       if (color === 'red') {
-        // 红兵过河前（y>4）只能前进，过河后（y<=4）可横向
-        if (y > 4) {
-          // 没过河，只能前进（y减小）
-          if (y - 1 >= 0) moves.push({x, y: y - 1});
-        } else {
-          // 已过河，可以前进或横向
-          if (y - 1 >= 0) moves.push({x, y: y - 1});
-          if (x - 1 >= 0) moves.push({x: x - 1, y});
-          if (x + 1 < 9) moves.push({x: x + 1, y});
-        }
-      } else {
-        // 黑卒过河前（y<5）只能前进，过河后（y>=5）可横向
-        if (y < 5) {
+        // 红兵过河前（y<=4）只能前进，过河后（y>=5）可横向
+        if (y <= 4) {
           // 没过河，只能前进（y增大）
           if (y + 1 < 10) moves.push({x, y: y + 1});
         } else {
           // 已过河，可以前进或横向
           if (y + 1 < 10) moves.push({x, y: y + 1});
+          if (x - 1 >= 0) moves.push({x: x - 1, y});
+          if (x + 1 < 9) moves.push({x: x + 1, y});
+        }
+      } else {
+        // 黑卒过河前（y>=5）只能前进，过河后（y<=4）可横向
+        if (y >= 5) {
+          // 没过河，只能前进（y减小）
+          if (y - 1 >= 0) moves.push({x, y: y - 1});
+        } else {
+          // 已过河，可以前进或横向
+          if (y - 1 >= 0) moves.push({x, y: y - 1});
           if (x - 1 >= 0) moves.push({x: x - 1, y});
           if (x + 1 < 9) moves.push({x: x + 1, y});
         }
@@ -384,7 +384,13 @@ export function wouldBeInCheck(board: (Piece | null)[][], piece: Piece, to: Posi
   newBoard[piece.y][piece.x] = null;
   newBoard[to.y][to.x] = { ...piece, x: to.x, y: to.y };
   
-  return isInCheck(newBoard, color);
+  // 检查是否被将军
+  if (isInCheck(newBoard, color)) return true;
+  
+  // 检查将帅是否对面
+  if (isKingsFacing(newBoard)) return true;
+  
+  return false;
 }
 
 type PieceType = 'k' | 'r' | 'n' | 'b' | 'a' | 'c' | 'p';
