@@ -127,10 +127,25 @@ export const useChessStore = create<ChessState>((set, get) => ({
     const allLegalMoves = getLegalMoves(board, selectedPiece);
     const isLegal = allLegalMoves.some(m => m.x === to.x && m.y === to.y);
     
-    if (!isLegal) return;
+    if (!isLegal) {
+      console.log('非法移动:', {
+        selectedPiece,
+        to,
+        allLegalMoves
+      });
+      return;
+    }
     
     // 获取被吃的棋子
     const capturedPiece = pieces.find(p => p.x === to.x && p.y === to.y);
+    
+    // 调试日志：打印移动前的信息
+    console.log('执行移动:', {
+      from: { x: selectedPiece.x, y: selectedPiece.y },
+      to,
+      selectedPiece,
+      piecesCount: pieces.length
+    });
     
     // 执行移动
     const newPieces = movePiece(pieces, { x: selectedPiece.x, y: selectedPiece.y }, to);
@@ -263,27 +278,87 @@ export const useChessStore = create<ChessState>((set, get) => ({
     
     set({ isAIThinking: true });
     
-    const piecesCopy = copyPieces(state.pieces);
     const depth = getDepth(state.difficulty);
     const aiColor = state.playerColor === 'red' ? 'black' : 'red';
     
     // 使用 setTimeout 避免阻塞 UI
     setTimeout(() => {
+      // 重新获取当前状态，确保使用最新的棋盘
+      const currentState = get();
+      const piecesCopy = copyPieces(currentState.pieces);
       const board = placePieces(piecesCopy);
       const move = getBestMove(board, piecesCopy, aiColor, depth);
       
       if (move) {
-        // 直接设置 selectedPiece 和 legalMoves，绕过 selectPiece 的 isAIThinking 检查
-        const moveBoard = placePieces(get().pieces);
-        const legalMoves = getLegalMoves(moveBoard, move.piece);
-        set({ 
-          selectedPiece: move.piece, 
-          legalMoves 
+        // 在当前棋盘上找到对应的棋子（因为move.piece来自piecesCopy）
+        // 再次重新获取当前状态，确保使用最新的棋盘
+        const latestState = get();
+        
+        // 调试日志：打印移动信息
+        console.log('AI移动信息:', {
+          moveFrom: move.from,
+          moveTo: move.to,
+          movePiece: move.piece,
+          movePieceX: move.piece.x,
+          movePieceY: move.piece.y,
+          movePieceType: move.piece.type,
+          movePieceColor: move.piece.color
         });
-        setTimeout(() => {
-          get().movePiece(move.to);
+        
+        // 根据位置和类型查找棋子，确保找到正确的棋子
+        // 注意：move.piece是副本，它的x,y坐标可能与move.from不一致
+        // 我们使用move.from作为查找依据，因为它来自piecesCopy中的原始位置
+        // 同时验证move.piece的x,y坐标是否与move.from一致
+        const pieceMatch = latestState.pieces.find(p => 
+          p.x === move.from.x && 
+          p.y === move.from.y &&
+          p.type === move.piece.type &&
+          p.color === move.piece.color
+        );
+        
+        // 如果找不到匹配的棋子，尝试使用move.piece的x,y坐标
+        const currentPiece = pieceMatch || latestState.pieces.find(p => 
+          p.x === move.piece.x && 
+          p.y === move.piece.y &&
+          p.type === move.piece.type &&
+          p.color === move.piece.color
+        );
+        
+        // 调试日志：打印找到的棋子
+        console.log('找到的棋子:', currentPiece, '期望的棋子类型:', move.piece.type);
+        
+        if (currentPiece) {
+          const moveBoard = placePieces(latestState.pieces);
+          const legalMoves = getLegalMoves(moveBoard, currentPiece);
+          
+          // 验证目标位置是否在合法移动中
+          const isLegal = legalMoves.some(m => m.x === move.to.x && m.y === move.to.y);
+          
+          if (isLegal) {
+            set({ 
+              selectedPiece: currentPiece, 
+              legalMoves 
+            });
+            // 直接调用 movePiece，不使用 setTimeout
+            const movePieceFn = get().movePiece;
+            movePieceFn(move.to);
+            set({ isAIThinking: false });
+          } else {
+            console.log('AI 移动不合法，跳过:', {
+              currentPiece,
+              to: move.to,
+              legalMoves
+            });
+            set({ isAIThinking: false });
+          }
+        } else {
+          console.log('未找到匹配的棋子:', {
+            moveFrom: move.from,
+            movePiece: move.piece,
+            availablePieces: latestState.pieces.filter(p => p.color === aiColor)
+          });
           set({ isAIThinking: false });
-        }, 200);
+        }
       } else {
         // AI无子可动
         const newBoard = placePieces(piecesCopy);

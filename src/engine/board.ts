@@ -106,15 +106,19 @@ export function copyPieces(pieces: Piece[]): Piece[] {
 // 移动棋子 (返回新的棋子数组)
 export function movePiece(pieces: Piece[], from: Position, to: Position): Piece[] {
   const newPieces = copyPieces(pieces);
-  const pieceIndex = newPieces.findIndex(p => p.x === from.x && p.y === from.y);
+  let pieceIndex = newPieces.findIndex(p => p.x === from.x && p.y === from.y);
   if (pieceIndex === -1) return pieces;
-  
+
   // 移除被吃的棋子
   const targetIndex = newPieces.findIndex(p => p.x === to.x && p.y === to.y);
   if (targetIndex !== -1) {
     newPieces.splice(targetIndex, 1);
+    // splice 后若被吃棋子在移动棋子之前，索引需前移一位
+    if (targetIndex < pieceIndex) {
+      pieceIndex--;
+    }
   }
-  
+
   // 移动棋子
   newPieces[pieceIndex] = { ...newPieces[pieceIndex], x: to.x, y: to.y };
   return newPieces;

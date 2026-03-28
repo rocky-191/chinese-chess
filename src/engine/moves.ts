@@ -26,8 +26,9 @@ export function generateMoves(board: (Piece | null)[][], pieces: Piece[], color:
       // 评估这个着法
       const score = evaluateMove(board, piece, to);
       
+      // 创建棋子副本，确保move.piece是独立的对象
       moves.push({
-        piece,
+        piece: { ...piece },
         from: { x: piece.x, y: piece.y },
         to,
         score
@@ -66,27 +67,31 @@ function evaluateMove(board: (Piece | null)[][], piece: Piece, to: Position): nu
 // 执行移动
 export function executeMove(pieces: Piece[], move: MoveNode): { newPieces: Piece[], captured: Piece | null } {
   const newPieces = copyPieces(pieces);
-  const pieceIndex = newPieces.findIndex(p => 
+  let pieceIndex = newPieces.findIndex(p =>
     p.x === move.from.x && p.y === move.from.y
   );
-  
+
   let captured: Piece | null = null;
-  
+
   // 找被吃的棋子
-  const capturedIndex = newPieces.findIndex(p => 
+  const capturedIndex = newPieces.findIndex(p =>
     p.x === move.to.x && p.y === move.to.y
   );
-  
+
   if (capturedIndex !== -1) {
     captured = { ...newPieces[capturedIndex] };
     newPieces.splice(capturedIndex, 1);
+    // splice 后若被吃棋子在移动棋子之前，索引需前移一位
+    if (capturedIndex < pieceIndex) {
+      pieceIndex--;
+    }
   }
-  
+
   // 移动棋子
   if (pieceIndex !== -1) {
     newPieces[pieceIndex] = { ...newPieces[pieceIndex], x: move.to.x, y: move.to.y };
   }
-  
+
   return { newPieces, captured };
 }
 
