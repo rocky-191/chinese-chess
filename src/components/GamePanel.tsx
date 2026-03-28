@@ -1,7 +1,7 @@
 // 游戏面板组件
 
 import React from 'react';
-import { useChessStore, Difficulty, PieceColor } from '../store/chessStore';
+import { useChessStore, Difficulty, PieceColor, GameMode } from '../store/chessStore';
 
 export const GamePanel: React.FC = () => {
   const { 
@@ -10,18 +10,25 @@ export const GamePanel: React.FC = () => {
     isAIThinking,
     playerColor,
     difficulty,
+    gameMode,
     isInCheck,
     thinkingTime,
     undoMove,
     resetGame,
     setDifficulty,
     setPlayerColor,
+    setGameMode,
   } = useChessStore();
   
   const statusText = () => {
     if (gameStatus === 'red_wins') return '红方获胜!';
     if (gameStatus === 'black_wins') return '黑方获胜!';
     if (gameStatus === 'draw') return '和棋!';
+    if (gameMode === 'two-player') {
+      if (isAIThinking) return '思考中...';
+      if (isInCheck) return currentTurn === 'red' ? '红方被将军!' : '黑方被将军!';
+      return currentTurn === 'red' ? '红方走棋' : '黑方走棋';
+    }
     if (isAIThinking) return 'AI思考中...';
     if (isInCheck) return currentTurn === 'red' ? '红方被将军!' : '黑方被将军!';
     if (currentTurn === playerColor) return '轮到你走棋';
@@ -31,6 +38,9 @@ export const GamePanel: React.FC = () => {
   const statusColor = () => {
     if (gameStatus !== 'playing') return 'text-yellow-400';
     if (isInCheck) return 'text-red-500';
+    if (gameMode === 'two-player') {
+      return currentTurn === 'red' ? 'text-red-500' : 'text-blue-800';
+    }
     if (currentTurn === playerColor) return 'text-green-400';
     return 'text-gray-400';
   };
@@ -56,7 +66,35 @@ export const GamePanel: React.FC = () => {
       
       {/* 游戏控制 */}
       <div className="space-y-4">
+        {/* 模式选择 */}
+        <div className="bg-amber-50 p-3 rounded-lg border border-amber-300">
+          <label className="block text-sm font-bold text-amber-800 mb-2">游戏模式</label>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setGameMode('ai')}
+              className={`flex-1 py-2 px-3 rounded-lg font-medium transition-all ${
+                gameMode === 'ai'
+                  ? 'bg-green-600 text-white shadow-md'
+                  : 'bg-green-200 text-green-800 hover:bg-green-300'
+              }`}
+            >
+              人机对弈
+            </button>
+            <button
+              onClick={() => setGameMode('two-player')}
+              className={`flex-1 py-2 px-3 rounded-lg font-medium transition-all ${
+                gameMode === 'two-player'
+                  ? 'bg-purple-600 text-white shadow-md'
+                  : 'bg-purple-200 text-purple-800 hover:bg-purple-300'
+              }`}
+            >
+              双人对弈
+            </button>
+          </div>
+        </div>
+        
         {/* 难度选择 */}
+        {gameMode === 'ai' && (
         <div className="bg-amber-50 p-3 rounded-lg border border-amber-300">
           <label className="block text-sm font-bold text-amber-800 mb-2">AI难度</label>
           <div className="flex gap-2">
@@ -75,8 +113,10 @@ export const GamePanel: React.FC = () => {
             ))}
           </div>
         </div>
+        )}
         
         {/* 执棋选择 */}
+        {gameMode === 'ai' && (
         <div className="bg-amber-50 p-3 rounded-lg border border-amber-300">
           <label className="block text-sm font-bold text-amber-800 mb-2">执棋</label>
           <div className="flex gap-2">
@@ -102,6 +142,7 @@ export const GamePanel: React.FC = () => {
             </button>
           </div>
         </div>
+        )}
         
         {/* 操作按钮 */}
         <div className="flex gap-2">

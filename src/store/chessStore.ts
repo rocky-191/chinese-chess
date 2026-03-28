@@ -9,6 +9,7 @@ import { AIRequest, AIResponse } from '../engine/ai.worker';
 
 export type GameStatus = 'playing' | 'red_wins' | 'black_wins' | 'draw';
 export type Difficulty = 'easy' | 'medium' | 'hard';
+export type GameMode = 'ai' | 'two-player';
 
 interface ChessState {
   pieces: Piece[];
@@ -18,8 +19,9 @@ interface ChessState {
   moveHistory: { from: Position; to: Position; piece: Piece; captured?: Piece }[];
   gameStatus: GameStatus;
   isAIThinking: boolean;
-  playerColor: PieceColor; // 玩家执什么颜色
+  playerColor: PieceColor;
   difficulty: Difficulty;
+  gameMode: GameMode;
   lastMove: { from: Position; to: Position } | null;
   isInCheck: boolean;
   thinkingTime: number;
@@ -32,6 +34,7 @@ interface ChessState {
   resetGame: () => void;
   setDifficulty: (difficulty: Difficulty) => void;
   setPlayerColor: (color: PieceColor) => void;
+  setGameMode: (mode: GameMode) => void;
   makeAIMove: () => void;
 }
 
@@ -93,6 +96,7 @@ export const useChessStore = create<ChessState>((set, get) => ({
   isAIThinking: false,
   playerColor: 'red',
   difficulty: 'medium',
+  gameMode: 'ai',
   lastMove: null,
   isInCheck: false,
   thinkingTime: 0,
@@ -101,7 +105,8 @@ export const useChessStore = create<ChessState>((set, get) => ({
     const state = get();
     if (state.gameStatus !== 'playing' || state.isAIThinking) return;
     if (piece.color !== state.currentTurn) return;
-    if (piece.color !== state.playerColor && state.isAIThinking) return;
+    // 在AI模式下，只有玩家自己的棋子可以被选择
+    if (state.gameMode === 'ai' && piece.color !== state.playerColor) return;
     
     const board = placePieces(state.pieces);
     const moves = getLegalMoves(board, piece);
@@ -193,8 +198,8 @@ export const useChessStore = create<ChessState>((set, get) => ({
       isInCheck: inCheckState,
     });
     
-    // 如果是玩家走棋且游戏未结束，触发AI
-    if (gameStatus === 'playing' && nextTurn !== state.playerColor) {
+    // 在AI模式下，如果游戏未结束且下一步是AI走棋，触发AI
+    if (state.gameMode === 'ai' && gameStatus === 'playing' && nextTurn !== state.playerColor) {
       setTimeout(() => get().makeAIMove(), 500);
     }
   },
@@ -266,15 +271,17 @@ export const useChessStore = create<ChessState>((set, get) => ({
   
   setPlayerColor: (playerColor: PieceColor) => {
     set({ playerColor });
-    // 如果玩家执黑，AI先走
-    if (playerColor === 'black') {
-      setTimeout(() => get().makeAIMove(), 500);
-    }
   },
-  
+
+  setGameMode: (gameMode: GameMode) => {
+    set({ gameMode });
+    // 重置游戏
+    get().resetGame();
+  },
+
   makeAIMove: () => {
     const state = get();
-    if (state.gameStatus !== 'playing' || state.isAIThinking) return;
+    if (state.gameStatus !== 'playing' || state.isAIThinking || state.gameMode !== 'ai') return;
     
     set({ isAIThinking: true });
     
