@@ -2,7 +2,7 @@
 
 一个基于 Web 的中国象棋对弈游戏，支持人机对战和双人对战。
 
-在线体验：https://rocky-191.github.io/chinese-chess
+在线体验：https://d07ea0b8.chinese-chess-ahi.pages.dev
 
 ## 🎯 功能特性
 
